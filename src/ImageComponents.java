@@ -39,6 +39,7 @@ import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.JPopupMenu;
 import javax.swing.filechooser.FileNameExtensionFilter;
+import java.util.PriorityQueue;
 
 public class ImageComponents extends JFrame implements ActionListener {
     public static ImageComponents appInstance; // Used in main().
@@ -125,6 +126,7 @@ public class ImageComponents extends JFrame implements ActionListener {
 
     JMenuItem CCItem1;
     JMenuItem aboutItem, helpItem;
+    JMenuItem CCItem2;
     
     JFileChooser fileChooser; // For loading and saving images.
     
@@ -135,13 +137,45 @@ public class ImageComponents extends JFrame implements ActionListener {
             this.r = r; this.g = g; this.b = b;    		
         }
 
-        double euclideanDistance(Color c2) {
+        int euclideanDistance(Color c2) {
             // TODO
             // Replace this to return the distance between this color and c2.
             int diffR = r - c2.r; // calculates the distance between the red
             int diffG = g - c2.g; // calculates the distance between the blue
             int diffB = b - c2.b; // calculates the distance between the green
-            return Math.sqrt((double) Math.pow(diffR, 2) + Math.pow(diffG, 2) + Math.pow(diffB, 2));
+            return diffR * diffR + diffG * diffG + diffB * diffB;
+        }
+    }
+
+    public class Edge implements Comparable<Edge>{
+        private int endpoint0, endpoint1, weight;
+
+        Edge(int endpoint0, int endpoint1, int weight) {
+            this.endpoint0 = endpoint0;
+            this.endpoint1 = endpoint1;
+            this.weight = weight;
+        }
+
+        public int compareTo(Edge e2) {
+            if(weight == e2.getWeight()) {
+                return 0;
+            } else if(weight < e2.getWeight()) {
+                return -1;
+            } else {
+                return 1;
+            }
+        }
+
+        public int getEndpoint0() {
+            return endpoint0;
+        }
+
+        public int getEndpoint1() {
+            return endpoint1;
+        }
+
+        public  int getWeight() {
+            return weight;
         }
     }
 
@@ -214,6 +248,10 @@ public class ImageComponents extends JFrame implements ActionListener {
         CCItem1 = new JMenuItem("Compute Connected Components and Recolor");
         CCItem1.addActionListener(this);
         ccMenu.add(CCItem1);
+
+        CCItem2 = new JMenuItem("Segment Image and Recolor");
+        CCItem2.addActionListener(this);
+        ccMenu.add(CCItem2);
         
         // Create the Help menu's item.
         aboutItem = new JMenuItem("About");
@@ -274,7 +312,6 @@ public class ImageComponents extends JFrame implements ActionListener {
             biFiltered = new BufferedImage(w, h, BufferedImage.TYPE_INT_RGB);
             pack(); // Lay out the JFrame and set its size.
             repaint();
-            initializeParentID();   // Setups the uptree
         } catch (IOException e) {
             System.out.println("Image could not be read: "+filename);
             System.exit(1);
@@ -331,8 +368,26 @@ public class ImageComponents extends JFrame implements ActionListener {
 
     void handleCCMenu(JMenuItem mi) {
         System.out.println("A connected components menu item was selected.");
-        if (mi==CCItem1) { computeConnectedComponents(); }
+        if (mi==CCItem1) {
+            System.out.println("A connected components menu item was selected.");
+            computeConnectedComponents();
+        }
+        if (mi==CCItem2) {
+            int nregions = 25; // default value.
+            String inputValue = JOptionPane.showInputDialog("Please input the number of regions desired");
+            try {
+                nregions = (new Integer(inputValue)).intValue();
+            }
+            catch(Exception e) {
+                System.out.println(e);
+                System.out.println("That did not convert to an integer. Using the default: 25.");
+            }
+            System.out.println("nregions is "+nregions);
+            // Call your image segmentation method here.
+            createImageSegment(nregions);
+        }
     }
+
     void handleHelpMenu(JMenuItem mi){
         System.out.println("A help menu item was selected.");
         if (mi==aboutItem) {
@@ -396,6 +451,7 @@ public class ImageComponents extends JFrame implements ActionListener {
      * Repaints the image at the end.
      */
     void computeConnectedComponents() {
+        initializeParentID();   // Setups the uptree
         Integer count = 0;
 
         // Scans the entire image, connecting components if they are the same color and their roots
@@ -420,36 +476,90 @@ public class ImageComponents extends JFrame implements ActionListener {
                 }
             }
         }
-        System.out.println("The number of times that the method UNION was called for this image is: " + count + ".");
 
-        HashMap<Integer, Integer> componentNumber = new HashMap<Integer, Integer>();
-        count = 0;
+        connectComponents(count);
+    }
 
-        // Scans the entire parentID array and counts how many roots is found. That root and its count
-        // is added then added to the componentNumber.
+    void createImageSegment(int givenNumSegments) {
+        PriorityQueue<Edge> edges = new PriorityQueue<Edge>();
+        initializeParentID();   // Setups the uptree
+
+        //Create the weighted pixel graph
         for (int y = 0; y < h; y++) {
             for (int x = 0; x < w; x++) {
-                if (parentID[y][x] == -1) {
-                    componentNumber.put(Integer.valueOf(y * w + x), count);
-                    count++;
+                int currPixelID = (y) * w + x;
+                int currentPixelRGB = biWorking.getRGB(getXcoord(currPixelID), getYcoord(currPixelID));
+                Color currentPixelColor = new Color(currentPixelRGB >> 16 & 255, currentPixelRGB >> 8 & 255, currentPixelRGB & 255);
+                if (x < w - 1) {
+                    int neighborPixelID = y * w + x + 1;
+                    int neighborPixelRGB = biWorking.getRGB(getXcoord(neighborPixelID), getYcoord(neighborPixelID));
+                    Color neighborPixelColor = new Color(neighborPixelRGB >> 16 & 255, neighborPixelRGB >> 8 & 255, neighborPixelRGB & 255);
+                    double colorDistance = currentPixelColor.euclideanDistance(neighborPixelColor);
+                    int colorDistanceSqr = (int) (colorDistance * colorDistance);
+                    edges.add(new Edge(currPixelID, neighborPixelID, colorDistanceSqr));
+                }
+
+                if (y < h - 1) {
+                    int neighborPixelID = (y + 1) * w + x;
+                    int neighborPixelRGB = biWorking.getRGB(getXcoord(neighborPixelID), getYcoord(neighborPixelID));
+                    Color neighborPixelColor = new Color(neighborPixelRGB >> 16 & 255, neighborPixelRGB >> 8 & 255, neighborPixelRGB & 255);
+                    double colorDistance = currentPixelColor.euclideanDistance(neighborPixelColor);
+                    int colorDistanceSqr = (int) (colorDistance * colorDistance);
+                    edges.add(new Edge(currPixelID, neighborPixelID, colorDistanceSqr));
                 }
             }
         }
-        System.out.println("The number of connected components in this image is: " + count + ".");
-
-        // Scans the entire image again, but repaints the image with the count values of the roots
-        // from the componentNumber
-        ProgressiveColors progressiveColors = new ProgressiveColors();
-        for (int y = 0; y < h; y++) {
-            for (int x = 0; x < w; x++) {
-                Integer rootID = Integer.valueOf(find(y * w + x));
-                int value = componentNumber.get(rootID).intValue();
-                int[] rgb = progressiveColors.progressiveColor(value);
-                putPixel(biWorking, x, y, rgb[0], rgb[1], rgb[2]);
+        int currentSegments = h * w;
+        Integer count = 0;
+        while(currentSegments > givenNumSegments) {
+            Edge currentEdge = edges.remove();
+            int pixelID1 = currentEdge.getEndpoint0();
+            int pixelID2 = currentEdge.getEndpoint1();
+            int root1 = find(pixelID1);
+            int root2 = find(pixelID2);
+            if(root1 != root2) {
+                union(pixelID1, pixelID2);
+                currentSegments--;
+                count++;
             }
         }
-        repaint();
+
+        System.out.println("Done finding minimum spannng forest");
+
+        connectComponents(count);
     }
+
+        void connectComponents(Integer count) {
+            System.out.println("The number of times that the method UNION was called for this image is: " + count + ".");
+
+            HashMap<Integer, Integer> componentNumber = new HashMap<Integer, Integer>();
+            count = 0;
+
+            // Scans the entire parentID array and counts how many roots is found. That root and its count
+            // is added then added to the componentNumber.
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    if (parentID[y][x] == -1) {
+                        componentNumber.put(Integer.valueOf(y * w + x), count);
+                        count++;
+                    }
+                }
+            }
+            System.out.println("The number of connected components in this image is: " + count + ".");
+
+            // Scans the entire image again, but repaints the image with the count values of the roots
+            // from the componentNumber
+            ProgressiveColors progressiveColors = new ProgressiveColors();
+            for (int y = 0; y < h; y++) {
+                for (int x = 0; x < w; x++) {
+                    Integer rootID = Integer.valueOf(find(y * w + x));
+                    int value = componentNumber.get(rootID).intValue();
+                    int[] rgb = progressiveColors.progressiveColor(value);
+                    putPixel(biWorking, x, y, rgb[0], rgb[1], rgb[2]);
+                }
+            }
+            repaint();
+        }
 
     /* This main method can be used to run the application. */
     public static void main(String s[]) {
