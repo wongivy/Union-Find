@@ -44,13 +44,16 @@ import java.util.PriorityQueue;
 public class ImageComponents extends JFrame implements ActionListener {
     public static ImageComponents appInstance; // Used in main().
 
-    String startingImage = "gettysburg-address-p1.png";
+    String startingImage = "donut2.png";
     BufferedImage biTemp, biWorking, biFiltered; // These hold arrays of pixels.
     Graphics gOrig, gWorking; // Used to access the drawImage method.
     int w; // width of the current image.
     int h; // height of the current image.
 
     int[][] parentID; // For your forest of up-trees.
+
+    private static final int NREGIONS_CHECK = 0;
+    private static final int DELTA_CHECK = 1;
 
     /*
      * Finds and returns the pixelID of the parent of the given PixelID
@@ -127,6 +130,7 @@ public class ImageComponents extends JFrame implements ActionListener {
     JMenuItem CCItem1;
     JMenuItem aboutItem, helpItem;
     JMenuItem CCItem2;
+    JMenuItem CCItem3;
     
     JFileChooser fileChooser; // For loading and saving images.
     
@@ -252,7 +256,11 @@ public class ImageComponents extends JFrame implements ActionListener {
         CCItem2 = new JMenuItem("Segment Image and Recolor");
         CCItem2.addActionListener(this);
         ccMenu.add(CCItem2);
-        
+
+        CCItem3 = new JMenuItem("Segment Image Using a Maximum Pixel DELTA");
+        CCItem3.addActionListener(this);
+        ccMenu.add(CCItem3);
+
         // Create the Help menu's item.
         aboutItem = new JMenuItem("About");
         aboutItem.addActionListener(this);
@@ -384,7 +392,22 @@ public class ImageComponents extends JFrame implements ActionListener {
             }
             System.out.println("nregions is "+nregions);
             // Call your image segmentation method here.
-            createImageSegment(nregions);
+            createImageSegment(NREGIONS_CHECK, nregions);
+        }
+
+        if(mi==CCItem3) {
+            String inputValue = JOptionPane.showInputDialog("Please input the delta desired.");
+            int delta = 9;
+            try {
+                delta = (new Integer(inputValue)).intValue();
+            }
+            catch(Exception e) {
+                System.out.println(e);
+                System.out.println("That did not convert to an integer. Using the default: 9.");
+            }
+            System.out.println("delta is "+ delta);
+            // Call your image segmentation method here.
+            createImageSegment(DELTA_CHECK, delta);
         }
     }
 
@@ -477,10 +500,10 @@ public class ImageComponents extends JFrame implements ActionListener {
             }
         }
 
-        connectComponents(count);
+        repaintImage(count);
     }
 
-    void createImageSegment(int givenNumSegments) {
+    void createImageSegment(int checkCase, int delta) {
         PriorityQueue<Edge> edges = new PriorityQueue<Edge>();
         initializeParentID();   // Setups the uptree
 
@@ -509,27 +532,49 @@ public class ImageComponents extends JFrame implements ActionListener {
                 }
             }
         }
-        int currentSegments = h * w;
         Integer count = 0;
-        while(currentSegments > givenNumSegments) {
-            Edge currentEdge = edges.remove();
-            int pixelID1 = currentEdge.getEndpoint0();
-            int pixelID2 = currentEdge.getEndpoint1();
-            int root1 = find(pixelID1);
-            int root2 = find(pixelID2);
-            if(root1 != root2) {
-                union(pixelID1, pixelID2);
-                currentSegments--;
-                count++;
-            }
+
+        switch(checkCase) {
+            case DELTA_CHECK:
+                if(edges.size() > 0) {
+                    Edge currentEdge = edges.remove();
+                    while(currentEdge != null && currentEdge.getWeight() <= delta) {
+                        int pixelID1 = currentEdge.getEndpoint0();
+                        int pixelID2 = currentEdge.getEndpoint1();
+                        int root1 = find(pixelID1);
+                        int root2 = find(pixelID2);
+                        if(root1 != root2) {
+                            union(pixelID1, pixelID2);
+                            count++;
+                        }
+                        currentEdge = (edges.size() > 0) ? edges.remove() : null;
+                    }
+                }
+                break;
+
+            case NREGIONS_CHECK:
+                int currentSegments = h * w;
+                while(currentSegments > delta) {
+                    Edge currentEdge = edges.remove();
+                    int pixelID1 = currentEdge.getEndpoint0();
+                    int pixelID2 = currentEdge.getEndpoint1();
+                    int root1 = find(pixelID1);
+                    int root2 = find(pixelID2);
+                    if(root1 != root2) {
+                        union(pixelID1, pixelID2);
+                        currentSegments--;
+                        count++;
+                    }
+                }
+                break;
         }
 
         System.out.println("Done finding minimum spannng forest");
 
-        connectComponents(count);
+        repaintImage(count);
     }
 
-        void connectComponents(Integer count) {
+        void repaintImage(Integer count) {
             System.out.println("The number of times that the method UNION was called for this image is: " + count + ".");
 
             HashMap<Integer, Integer> componentNumber = new HashMap<Integer, Integer>();
